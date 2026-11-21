@@ -457,10 +457,41 @@ function cartaoTraducao(texto, conteudo) {
       </div>
     </div>
     <div class="cab-texto">
-      <span class="sub">${DIRECOES[direcao].subDestino}</span>
+      <span class="sub">${DIRECOES[direcao].subDestino}<span id="fonte-traducao" class="fonte"></span></span>
       ${conteudo}
     </div>
   </article>`;
+}
+
+/* ---------- Tradutor embutido do Chrome (quando existir no aparelho) ---------- */
+// Hoje o Google só liberou no Chrome do computador. Se um dia chegar ao Android,
+// o app passa a usar sozinho: grátis, offline e com a qualidade do Google.
+const tradutoresChrome = {};
+const chromeIndisponivel = {};
+// Em alguns Chromes o recurso existe mas não responde; nunca deixamos isso travar a tradução.
+const comLimite = (promessa, ms) => Promise.race([promessa, new Promise((_, rej) => setTimeout(() => rej(new Error("tempo esgotado")), ms))]);
+async function tradutorDoChrome(d) {
+  if (chromeIndisponivel[d]) return null;
+  if (!("Translator" in self)) return null;
+  if (tradutoresChrome[d]) return tradutoresChrome[d];
+  const [origem, destino] = d === "en-pt" ? ["en", "pt"] : ["pt", "en"];
+  const opcoes = { sourceLanguage: origem, targetLanguage: destino };
+  try {
+    const st = await comLimite(Translator.availability(opcoes), 2000);
+    if (st === "available") {
+      tradutoresChrome[d] = await comLimite(Translator.create(opcoes), 5000);
+      return tradutoresChrome[d];
+    }
+    if (st === "unavailable") chromeIndisponivel[d] = true;
+    if (st === "downloadable" || st === "downloading") {
+      // O Chrome baixa o pacote de idioma em segundo plano; na próxima tradução já usa.
+      Translator.create(opcoes).then((t) => { tradutoresChrome[d] = t; }).catch(() => {});
+    }
+  } catch (e) {
+    console.warn("Tradutor do Chrome:", e);
+    chromeIndisponivel[d] = true; // não tenta de novo nesta sessão
+  }
+  return null;
 }
 
 let ultimaBusca = 0;
@@ -495,8 +526,10 @@ async function traduzir(textoBruto) {
 
   // 2) Frase livre: tradutor offline + expressões encontradas.
   const extras = dentro.map((e) => cartaoExpressao(e, tituloExtra)).join("");
+  const chrome = await tradutorDoChrome(d);
+  if (minhaBusca !== ultimaBusca) return;
 
-  if (!modeloPronto[d] && !modeloJaBaixado(d) && !baixando[d]) {
+  if (!chrome && !modeloPronto[d] && !modeloJaBaixado(d) && !baixando[d]) {
     res.innerHTML = cartaoTraducao(texto,
       `<p class="aviso" data-aguardando-modelo>Para traduzir frases livres nesta direção, baixe o tradutor offline (só uma vez, cerca de 115 MB).${dentro.length ? " Enquanto isso, veja as expressões desta frase." : ""}</p>
        <button class="btn-secundario" type="button" data-baixar>Baixar tradutor</button>`) + extras;
@@ -505,14 +538,22 @@ async function traduzir(textoBruto) {
   }
 
   res.innerHTML = cartaoTraducao(texto,
-    `<p class="pt carregando" data-aguardando-modelo>${modeloPronto[d] ? "Traduzindo…" : "Preparando o tradutor…"}</p>`) + extras;
+    `<p class="pt carregando" data-aguardando-modelo>${chrome || modeloPronto[d] ? "Traduzindo…" : "Preparando o tradutor…"}</p>`) + extras;
   anexarFrases();
 
   try {
-    const bruta = await pedirTraducao(ptEn ? ajustarPortugues(texto, true) : texto, d);
+    const entradaTradutor = ptEn ? ajustarPortugues(texto, true) : texto;
+    let bruta, fonte;
+    if (chrome) {
+      try { bruta = await comLimite(chrome.translate(entradaTradutor), 8000); fonte = "Tradutor do Chrome"; }
+      catch (e) { console.warn("Tradutor do Chrome falhou, usando o offline:", e); }
+    }
+    if (bruta === undefined) { bruta = await pedirTraducao(entradaTradutor, d); fonte = "Tradutor offline"; }
     if (minhaBusca !== ultimaBusca || d !== direcao) return;
     const alvo = $("#cartao-traducao .carregando");
     if (!alvo) return;
+    const fonteEl = $("#fonte-traducao");
+    if (fonteEl) fonteEl.textContent = " · " + fonte;
     const { texto: traducao, duvidosa } = limparRepeticao(bruta, texto);
     alvo.outerHTML = `<p class="pt">${esc(traducao)}</p>` + (duvidosa
       ? `<p class="aviso">O tradutor offline se confundiu com essa frase. Tente escrever de um jeito mais simples ou em partes menores.</p>`
