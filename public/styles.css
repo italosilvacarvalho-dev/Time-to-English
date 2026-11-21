@@ -114,7 +114,7 @@ main { flex: 1; padding: 8px 20px 110px; }
 .vazio { text-align: center; padding: 32px 12px; color: var(--muted); font-size: 15px; line-height: 1.5; }
 
 /* Abas */
-.abas { position: fixed; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); background: var(--surface); border-top: 1px solid var(--border); padding: 6px 0 calc(10px + env(safe-area-inset-bottom)); z-index: 10; }
+.abas { position: fixed; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); background: var(--surface); border-top: 1px solid var(--border); padding: 6px 0 calc(10px + env(safe-area-inset-bottom)); z-index: 10; }
 .abas a { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px; min-height: 44px; text-decoration: none; color: var(--muted); font-size: 12px; font-weight: 600; }
 .abas a[aria-current="page"] { color: var(--link); }
 
@@ -133,3 +133,17 @@ main { flex: 1; padding: 8px 20px 110px; }
 .en-menor { font-size: 18px; }
 .pt-menor { font-size: 16px; font-weight: 500; color: var(--text2); line-height: 1.35; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
 .exemplo .cab { align-items: center; }
+
+/* Microfone */
+.btn-voz { flex: none; width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--accent-border); background: var(--accent-soft); color: var(--accent-strong); display: inline-flex; align-items: center; justify-content: center; }
+.btn-voz .ico-parar { display: none; }
+.btn-voz.gravando { background: #C2410C; border-color: #C2410C; color: #FFFFFF; }
+.btn-voz.gravando .ico-mic { display: none; }
+.btn-voz.gravando .ico-parar { display: block; }
+.btn-voz:disabled { opacity: .5; }
+.status-voz { margin: -6px 4px 0; font-size: 14px; font-weight: 500; color: var(--muted); }
+.status-voz.gravando { color: var(--orange-text); }
+@media (prefers-reduced-motion: no-preference) {
+  .btn-voz.gravando { animation: pulsar 1.2s ease-in-out infinite; }
+  @keyframes pulsar { 0%,100% { box-shadow: 0 0 0 0 rgba(194,65,12,.45); } 50% { box-shadow: 0 0 0 8px rgba(194,65,12,0); } }
+}

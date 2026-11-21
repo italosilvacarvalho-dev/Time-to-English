@@ -10,7 +10,7 @@ App web (PWA) para aprender **inglês do dia a dia** e usar **offline** no celul
 - Pronúncia com a voz do próprio celular.
 - Frases salvas, modo claro e escuro.
 
-Próximo módulo: **Falar** (português falado → inglês).
+- **Voz:** toque no microfone, fale (português ou inglês, conforme a direção) e o app transcreve e traduz. Usa o Whisper base rodando no celular (cerca de 140 MB, baixados uma vez).
 
 ## Como funciona
 
@@ -37,6 +37,8 @@ Painel → **Workers & Pages** → **Create** → **Import a repository** → es
 A cada push na `main`, a Cloudflare publica a nova versão. O endereço fica parecido com `https://time-to-english.<sua-conta>.workers.dev`.
 
 ### 3. Enviar os modelos para o R2
+Escolha no campo "modelos": `todos`, `tradutor` ou `voz` (Whisper, para o microfone).
+
 **Opção A, pelo GitHub (sem instalar nada):**
 1. Cloudflare → **My Profile → API Tokens → Create Token** → modelo *"Edit Cloudflare Workers"*. Confira se a permissão **R2 Storage: Edit** está incluída.
 2. Copie também o **Account ID**, que aparece na página inicial dos Workers.

@@ -1,6 +1,6 @@
 // Service worker: guarda o app no celular para abrir sem internet.
 // Ao mudar arquivos do app, aumente VERSAO para o celular pegar a atualização.
-const VERSAO = "v5";
+const VERSAO = "v6";
 const CACHE_APP = `tte-app-${VERSAO}`;
 const CACHE_VENDOR = "tte-vendor-transformers-3.8.1";
 
@@ -11,6 +11,7 @@ const ARQUIVOS_APP = [
   "/app.js",
   "/translator-worker.js",
   "/busca-worker.js",
+  "/voz-worker.js",
   "/manifest.webmanifest",
   "/data/expressoes.json",
   "/icons/icon-192.png",

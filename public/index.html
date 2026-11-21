@@ -48,8 +48,13 @@
         <form id="form-traduzir" class="campo" autocomplete="off">
           <label id="rotulo-entrada" for="entrada" class="so-leitor">Palavra ou frase em inglês</label>
           <textarea id="entrada" rows="1" placeholder="Digite em inglês…" enterkeyhint="go" spellcheck="false" autocapitalize="off"></textarea>
+          <button id="btn-voz" class="btn-voz" type="button" aria-label="Falar (gravar voz)" aria-pressed="false">
+            <svg class="ico-mic" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1"/><path d="M12 18v4"/></svg>
+            <svg class="ico-parar" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+          </button>
           <button id="btn-traduzir" class="btn-primario" type="submit">Traduzir</button>
         </form>
+        <p id="status-voz" class="status-voz" role="status" hidden></p>
 
         <div class="bloco">
           <p class="rotulo">Exemplos do dia a dia</p>
@@ -77,21 +82,9 @@
         <div id="lista-salvas"></div>
       </section>
 
-      <!-- FALAR -->
-      <section id="tela-falar" class="tela" hidden>
-        <div class="cartao">
-          <span class="etiqueta etiqueta-laranja">Em breve</span>
-          <h2 class="titulo-cartao">Fale em português, veja em inglês</h2>
-          <p class="texto-suave">Este é o próximo módulo: você fala, o app transcreve e mostra como se diz em inglês do dia a dia, tudo offline.</p>
-        </div>
-      </section>
     </main>
 
     <nav class="abas" aria-label="Seções">
-      <a href="#falar" data-aba="falar">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1"/><path d="M12 18v4"/></svg>
-        Falar
-      </a>
       <a href="#traduzir" data-aba="traduzir">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h8"/><path d="M8 3v2"/><path d="M5 9c1.5 3 4 5 7 6"/><path d="M11 5c-1 4-3.5 7-7 9"/><path d="m13 21 4-9 4 9"/><path d="M14.5 18h5"/></svg>
         Traduzir

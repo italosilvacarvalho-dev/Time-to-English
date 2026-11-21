@@ -4,6 +4,13 @@ name: Enviar modelos para o R2
 # Precisa dos segredos CLOUDFLARE_API_TOKEN e CLOUDFLARE_ACCOUNT_ID no repositório.
 on:
   workflow_dispatch:
+    inputs:
+      modelos:
+        description: "O que enviar: todos, tradutor ou voz"
+        required: true
+        default: "todos"
+        type: choice
+        options: [todos, tradutor, voz]
 
 jobs:
   enviar:
@@ -17,4 +24,5 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          MODELOS: ${{ inputs.modelos }}
         run: bash scripts/enviar-modelos.sh

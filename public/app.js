@@ -56,7 +56,7 @@ $("#btn-tema").addEventListener("click", () => {
 aplicarTema(document.documentElement.dataset.tema || "claro");
 
 /* ---------- Navegação entre abas ---------- */
-const TITULOS = { traduzir: "Traduzir", salvas: "Salvas", falar: "Falar" };
+const TITULOS = { traduzir: "Traduzir", salvas: "Salvas" };
 function irPara() {
   const aba = (location.hash.slice(1) in TITULOS) ? location.hash.slice(1) : "traduzir";
   for (const nome of Object.keys(TITULOS)) $("#tela-" + nome).hidden = nome !== aba;
@@ -543,6 +543,7 @@ $("#resultado").addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (!b) return;
   if (b.dataset.ouvir) ouvir(b.dataset.ouvir);
+  if ("baixarVoz" in b.dataset) baixarVoz();
   if ("baixar" in b.dataset) {
     b.remove();
     baixarModelo();
@@ -553,6 +554,206 @@ $("#resultado").addEventListener("click", (e) => {
     b.outerHTML = botaoSalvar(b.dataset.salvar, b.dataset.pt);
   }
 });
+
+/* ---------- Voz: falar em vez de digitar (Whisper, offline) ---------- */
+const VOZ_MAX_SEG = 30;
+let vozWorker = null;
+let vozPronta = false;
+let vozBaixando = false;
+let vozId = 0;
+const vozPendentes = new Map();
+const vozJaBaixada = () => guardar.ler("tte.voz", null) === "pronto";
+const origemVoz = () => guardar.ler("tte.voz.origem", null);
+
+function statusVoz(texto, gravando = false) {
+  const el = $("#status-voz");
+  el.textContent = texto || "";
+  el.hidden = !texto;
+  el.classList.toggle("gravando", gravando);
+}
+
+function iniciarVoz() {
+  if (vozWorker) return vozWorker;
+  vozWorker = new Worker("/voz-worker.js", { type: "module" });
+  vozWorker.onmessage = (ev) => {
+    const m = ev.data;
+    if (m.tipo === "progresso") {
+      const barra = $("#voz-barra"), pct = $("#voz-pct");
+      if (barra) barra.style.width = m.pct + "%";
+      if (pct) pct.textContent = m.pct + "%";
+    } else if (m.tipo === "pronto") {
+      const era = vozBaixando;
+      vozPronta = true;
+      vozBaixando = false;
+      guardar.gravar("tte.voz", "pronto");
+      guardar.gravar("tte.voz.origem", m.origem);
+      const c = $("#cartao-voz");
+      if (c) c.remove();
+      if (era) statusVoz("Voz pronta! Toque no microfone e fale.");
+    } else if (m.tipo === "texto") {
+      const p = vozPendentes.get(m.id);
+      if (p) { vozPendentes.delete(m.id); p.resolve(m.texto); }
+    } else if (m.tipo === "erro") {
+      if (m.id && vozPendentes.has(m.id)) { vozPendentes.get(m.id).reject(new Error(m.mensagem)); vozPendentes.delete(m.id); }
+      else falhaVoz(m.mensagem);
+    }
+  };
+  return vozWorker;
+}
+
+function mostrarConviteVoz() {
+  if ($("#cartao-voz")) return;
+  $("#resultado").insertAdjacentHTML("afterbegin", `
+  <article class="cartao cartao-modelo" id="cartao-voz">
+    <div class="modelo-texto">
+      <strong>Falar com o app (offline)</strong>
+      <span id="voz-desc">Para transformar sua voz em texto sem internet, baixe o reconhecimento de voz uma vez (cerca de 140 MB, de preferência no Wi-Fi).</span>
+    </div>
+    <div id="voz-progresso" class="progresso" hidden>
+      <div class="progresso-barra"><div id="voz-barra" style="height:100%;width:0;background:var(--accent);transition:width .2s"></div></div>
+      <span id="voz-pct" class="progresso-txt">0%</span>
+    </div>
+    <button class="btn-secundario" type="button" data-baixar-voz>Baixar reconhecimento de voz</button>
+  </article>`);
+}
+
+function baixarVoz() {
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+  vozBaixando = true;
+  const b = document.querySelector("[data-baixar-voz]");
+  if (b) b.hidden = true;
+  const p = $("#voz-progresso");
+  if (p) p.hidden = false;
+  const d = $("#voz-desc");
+  if (d) d.textContent = "Baixando… pode continuar usando o app. Só precisa fazer isso uma vez.";
+  iniciarVoz().postMessage({ tipo: "carregar", origem: null });
+}
+
+function falhaVoz(msg) {
+  console.warn("Voz:", msg);
+  vozBaixando = false;
+  vozPronta = false;
+  guardar.gravar("tte.voz", null);
+  mostrarConviteVoz();
+  const d = $("#voz-desc");
+  if (d) d.textContent = navigator.onLine
+    ? "Não deu para baixar o reconhecimento de voz. Tente de novo daqui a pouco."
+    : "Sem internet. Conecte-se uma vez para baixar; depois a voz funciona offline.";
+  const b = document.querySelector("[data-baixar-voz]");
+  if (b) { b.hidden = false; b.textContent = "Tentar de novo"; }
+  const p = $("#voz-progresso");
+  if (p) p.hidden = true;
+  statusVoz("");
+}
+
+// Áudio do microfone → 16 kHz mono, o formato que o Whisper espera.
+async function paraAudio16k(blob) {
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const decodificado = await ctx.decodeAudioData(await blob.arrayBuffer());
+  ctx.close();
+  const off = new OfflineAudioContext(1, Math.max(1, Math.ceil(decodificado.duration * 16000)), 16000);
+  const fonte = off.createBufferSource();
+  fonte.buffer = decodificado;
+  fonte.connect(off.destination);
+  fonte.start();
+  const r = await off.startRendering();
+  return new Float32Array(r.getChannelData(0));
+}
+
+// O Whisper às vezes "inventa" frases de legenda quando há silêncio ou barulho.
+function limparTranscricao(t) {
+  return String(t || "")
+    .replace(/\[[^\]]*\]|\([^)]*\)/g, " ")
+    .replace(/legendas? (pela|por) .*$/i, " ")
+    .replace(/(obrigad[oa] por assistir|thanks? for watching|subtitles by .*)[.!]*/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+let gravador = null;
+let pedacos = [];
+let streamAtual = null;
+let limiteGravacao = null;
+let relogio = null;
+
+function marcarGravando(sim) {
+  const b = $("#btn-voz");
+  b.classList.toggle("gravando", sim);
+  b.setAttribute("aria-pressed", String(sim));
+  b.setAttribute("aria-label", sim ? "Parar de gravar" : "Falar (gravar voz)");
+}
+
+async function alternarGravacao() {
+  if (gravador && gravador.state === "recording") { pararGravacao(); return; }
+  if (!vozPronta && !vozJaBaixada()) {
+    if (!vozBaixando) mostrarConviteVoz();
+    $("#cartao-voz") && $("#cartao-voz").scrollIntoView({ behavior: "smooth", block: "nearest" });
+    return;
+  }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+    statusVoz("Este navegador não permite gravar áudio aqui.");
+    return;
+  }
+  try {
+    streamAtual = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+  } catch (e) {
+    statusVoz("Sem acesso ao microfone. Libere a permissão nas configurações do Chrome.");
+    return;
+  }
+  // Enquanto você fala, o modelo já vai sendo carregado do armazenamento do celular.
+  if (!vozPronta) iniciarVoz().postMessage({ tipo: "carregar", origem: origemVoz() });
+
+  pedacos = [];
+  gravador = new MediaRecorder(streamAtual);
+  gravador.ondataavailable = (e) => { if (e.data && e.data.size) pedacos.push(e.data); };
+  gravador.onstop = processarGravacao;
+  gravador.start();
+  marcarGravando(true);
+  const lingua = direcao === "pt-en" ? "português" : "inglês";
+  const inicio = Date.now();
+  const atualizar = () => statusVoz(`Gravando em ${lingua}… ${Math.round((Date.now() - inicio) / 1000)}s · toque para parar`, true);
+  atualizar();
+  relogio = setInterval(atualizar, 1000);
+  limiteGravacao = setTimeout(pararGravacao, VOZ_MAX_SEG * 1000);
+}
+
+function pararGravacao() {
+  clearTimeout(limiteGravacao);
+  clearInterval(relogio);
+  if (gravador && gravador.state === "recording") gravador.stop();
+  if (streamAtual) streamAtual.getTracks().forEach((t) => t.stop());
+  marcarGravando(false);
+}
+
+async function processarGravacao() {
+  const b = $("#btn-voz");
+  b.disabled = true;
+  statusVoz(vozPronta ? "Transcrevendo…" : "Preparando a voz e transcrevendo…");
+  try {
+    const blob = new Blob(pedacos, { type: (gravador && gravador.mimeType) || "audio/webm" });
+    const audio = await paraAudio16k(blob);
+    if (audio.length < 16000 * 0.4) { statusVoz("Gravação muito curta. Segure um pouco mais e fale."); return; }
+    const id = ++vozId;
+    const lingua = direcao === "pt-en" ? "pt" : "en";
+    const texto = await new Promise((resolve, reject) => {
+      vozPendentes.set(id, { resolve, reject });
+      iniciarVoz().postMessage({ tipo: "transcrever", id, audio, lingua, origem: origemVoz() }, [audio.buffer]);
+    });
+    const limpo = limparTranscricao(texto);
+    if (!limpo) { statusVoz("Não entendi. Tente falar de novo, mais perto do celular."); return; }
+    statusVoz("");
+    entrada.value = limpo;
+    ajustarAltura();
+    traduzir(limpo);
+  } catch (e) {
+    console.warn(e);
+    statusVoz("Não consegui transcrever. Tente de novo.");
+  } finally {
+    b.disabled = false;
+  }
+}
+
+$("#btn-voz").addEventListener("click", alternarGravacao);
 
 /* ---------- Campo de texto ---------- */
 const entrada = $("#entrada");
