@@ -690,8 +690,77 @@ function marcarGravando(sim) {
   b.setAttribute("aria-label", sim ? "Parar de gravar" : "Falar (gravar voz)");
 }
 
+/* Reconhecimento do Google no Chrome (bem mais preciso que o Whisper base).
+   Ordem: no aparelho (offline) → online → Whisper (reserva offline). */
+const ReconhecimentoNativo = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+let reconhecedor = null;
+let usarWhisperNestaSessao = false;
+
+async function escolherModoVoz(lang) {
+  if (!ReconhecimentoNativo || usarWhisperNestaSessao) return "whisper";
+  if (typeof ReconhecimentoNativo.available === "function") {
+    try {
+      const st = await ReconhecimentoNativo.available({ langs: [lang], processLocally: true });
+      if (st === "available") return "local";
+      if (st === "downloadable" && navigator.onLine && typeof ReconhecimentoNativo.install === "function") {
+        // Baixa o pacote de voz do Chrome em segundo plano; da próxima vez funciona offline.
+        ReconhecimentoNativo.install({ langs: [lang], processLocally: true }).catch(() => {});
+      }
+    } catch (e) { /* recurso não disponível neste Chrome */ }
+  }
+  return navigator.onLine ? "online" : "whisper";
+}
+
+function iniciarReconhecimentoNativo(lang, local) {
+  const r = new ReconhecimentoNativo();
+  r.lang = lang;
+  r.interimResults = true;  // o texto aparece no campo enquanto você fala
+  r.continuous = false;
+  r.maxAlternatives = 1;
+  if (local) { try { r.processLocally = true; } catch (e) {} }
+  let texto = "";
+  let erro = null;
+  reconhecedor = r;
+  marcarGravando(true);
+  const nomeLingua = lang.startsWith("pt") ? "português" : "inglês";
+  statusVoz(`Ouvindo em ${nomeLingua}${local ? " (offline)" : ""}… toque para parar`, true);
+  r.onresult = (e) => {
+    let t = "";
+    for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
+    texto = t;
+    entrada.value = t;
+    ajustarAltura();
+  };
+  r.onerror = (e) => { erro = e.error; };
+  r.onend = () => {
+    reconhecedor = null;
+    marcarGravando(false);
+    const final = texto.trim();
+    if (erro === "not-allowed" || erro === "service-not-allowed") {
+      statusVoz("Sem acesso ao microfone. Libere a permissão nas configurações do Chrome.");
+      return;
+    }
+    if (erro === "network" || erro === "language-not-supported") {
+      // Sem conexão com o Google: passa a usar o reconhecimento offline (Whisper).
+      usarWhisperNestaSessao = true;
+      statusVoz("Sem internet para o reconhecimento do Google. Toque no microfone de novo para usar o modo offline.");
+      return;
+    }
+    if (!final) { statusVoz(erro && erro !== "no-speech" && erro !== "aborted" ? "Não consegui ouvir. Tente de novo." : "Não ouvi nada. Tente de novo."); return; }
+    statusVoz("");
+    traduzir(final);
+  };
+  try { r.start(); } catch (e) { reconhecedor = null; marcarGravando(false); usarWhisperNestaSessao = true; statusVoz("Toque no microfone de novo para usar o modo offline."); }
+}
+
 async function alternarGravacao() {
+  if (reconhecedor) { reconhecedor.stop(); return; }
   if (gravador && gravador.state === "recording") { pararGravacao(); return; }
+  const lang = direcao === "pt-en" ? "pt-BR" : "en-US";
+  const modo = await escolherModoVoz(lang);
+  if (modo === "local" || modo === "online") { iniciarReconhecimentoNativo(lang, modo === "local"); return; }
+
+  // Reserva offline: Whisper no celular.
   if (!vozPronta && !vozJaBaixada()) {
     if (!vozBaixando) mostrarConviteVoz();
     $("#cartao-voz") && $("#cartao-voz").scrollIntoView({ behavior: "smooth", block: "nearest" });
