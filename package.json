@@ -1,0 +1,14 @@
+{
+  "name": "time-to-english",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Inglês do dia a dia, offline: tradução, expressões e pronúncia (PWA no Cloudflare Workers).",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "modelos": "bash scripts/enviar-modelos.sh"
+  },
+  "devDependencies": {
+    "wrangler": "^4.40.0"
+  }
+}

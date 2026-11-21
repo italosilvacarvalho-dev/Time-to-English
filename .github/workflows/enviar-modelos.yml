@@ -1,0 +1,20 @@
+name: Enviar modelos para o R2
+
+# Rode manualmente em: Actions → "Enviar modelos para o R2" → Run workflow.
+# Precisa dos segredos CLOUDFLARE_API_TOKEN e CLOUDFLARE_ACCOUNT_ID no repositório.
+on:
+  workflow_dispatch:
+
+jobs:
+  enviar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Baixar do Hugging Face e enviar ao R2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: bash scripts/enviar-modelos.sh

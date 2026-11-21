@@ -1,0 +1,17 @@
+{
+  "name": "Time to English",
+  "short_name": "Time to English",
+  "description": "Inglês do dia a dia, offline: tradução, expressões e pronúncia.",
+  "lang": "pt-BR",
+  "start_url": "/#traduzir",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F4F5F7",
+  "theme_color": "#2346E0",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

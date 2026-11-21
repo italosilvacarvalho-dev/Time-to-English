@@ -1,0 +1,18 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "time-to-english",
+  "main": "src/worker.js",
+  "compatibility_date": "2025-09-01",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+  "r2_buckets": [
+    {
+      // Crie este bucket no painel da Cloudflare (R2) antes do primeiro deploy.
+      "binding": "MODELS",
+      "bucket_name": "time-to-english-modelos"
+    }
+  ],
+  "observability": { "enabled": true }
+}
