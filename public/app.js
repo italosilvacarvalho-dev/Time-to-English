@@ -340,6 +340,49 @@ function atualizarSelo() {
 window.addEventListener("online", atualizarSelo);
 window.addEventListener("offline", atualizarSelo);
 
+/* ---------- Banco de frases reais (Tatoeba), offline ---------- */
+let busca = null;
+let buscaId = 0;
+const buscasPendentes = new Map();
+function iniciarBusca() {
+  if (busca) return busca;
+  busca = new Worker("/busca-worker.js");
+  busca.onmessage = (ev) => {
+    const m = ev.data;
+    if (m.tipo === "resultado") {
+      const r = buscasPendentes.get(m.id);
+      if (r) { buscasPendentes.delete(m.id); r(m.itens); }
+    } else if (m.tipo === "status" && m.estado === "indisponivel") {
+      console.warn("Banco de frases:", m.mensagem);
+    }
+  };
+  busca.postMessage({ tipo: "iniciar" });
+  return busca;
+}
+function buscarFrases(texto, lingua) {
+  iniciarBusca();
+  const id = ++buscaId;
+  return new Promise((resolve) => {
+    buscasPendentes.set(id, resolve);
+    busca.postMessage({ tipo: "buscar", id, texto, lingua });
+    setTimeout(() => { if (buscasPendentes.has(id)) { buscasPendentes.delete(id); resolve([]); } }, 20000);
+  });
+}
+function cartaoFrases(itens) {
+  const achou = itens[0].nota >= 0.95;
+  return `
+  <article class="cartao" id="frases-parecidas">
+    <p class="rotulo">${achou ? "Frase encontrada" : "Frases parecidas"}</p>
+    ${itens.map((f) => `
+      <div class="frase">
+        <div class="frase-txt"><span class="frase-en">${esc(f.en)}</span><span class="frase-pt">${esc(f.pt)}</span></div>
+        <button class="btn-icone sem-borda" type="button" data-ouvir="${esc(f.en)}" aria-label="Ouvir ${esc(f.en)}">${ICONE_OUVIR}</button>
+        ${botaoSalvar(f.en, f.pt)}
+      </div>`).join("")}
+    <span class="credito">Traduções feitas por pessoas · Tatoeba (CC BY 2.0 FR)</span>
+  </article>`;
+}
+
 /* ---------- Resultado ---------- */
 function botaoSalvar(en, pt) {
   const s = estaSalva(en);
@@ -419,11 +462,17 @@ async function traduzir(textoBruto) {
     dentro = [...dentro, ...ajustada.dentro.filter((e) => e !== exata)].slice(0, 4);
   }
   const res = $("#resultado");
+  const frasesP = buscarFrases(ptEn ? ajustarPortugues(texto, true) : texto, ptEn ? "pt" : "en");
+  const anexarFrases = () => frasesP.then((itens) => {
+    if (minhaBusca !== ultimaBusca || !itens.length) return;
+    res.insertAdjacentHTML("beforeend", cartaoFrases(itens));
+  });
   const tituloExtra = ptEn ? "Como falam na rua" : "Expressão nesta frase";
 
   // 1) A expressão está no dicionário: mostra direto, com contexto.
   if (exata) {
     res.innerHTML = cartaoExpressao(exata) + dentro.map((e) => cartaoExpressao(e, "Também nesta frase")).join("");
+    anexarFrases();
     return;
   }
 
@@ -434,11 +483,13 @@ async function traduzir(textoBruto) {
     res.innerHTML = cartaoTraducao(texto,
       `<p class="aviso" data-aguardando-modelo>Para traduzir frases livres nesta direção, baixe o tradutor offline (só uma vez, cerca de 115 MB).${dentro.length ? " Enquanto isso, veja as expressões desta frase." : ""}</p>
        <button class="btn-secundario" type="button" data-baixar>Baixar tradutor</button>`) + extras;
+    anexarFrases();
     return;
   }
 
   res.innerHTML = cartaoTraducao(texto,
     `<p class="pt carregando" data-aguardando-modelo>${modeloPronto[d] ? "Traduzindo…" : "Preparando o tradutor…"}</p>`) + extras;
+  anexarFrases();
 
   try {
     const bruta = await pedirTraducao(ptEn ? ajustarPortugues(texto, true) : texto, d);
@@ -457,7 +508,11 @@ async function traduzir(textoBruto) {
     if (ptEn) {
       const maisExpressoes = buscarExpressoes(traducao, "en", dentro);
       const novas = [maisExpressoes.exata, ...maisExpressoes.dentro].filter((e) => e && !dentro.includes(e));
-      if (novas.length) res.insertAdjacentHTML("beforeend", novas.map((e) => cartaoExpressao(e, tituloExtra)).join(""));
+      if (novas.length) {
+        const html = novas.map((e) => cartaoExpressao(e, tituloExtra)).join("");
+        const frases = $("#frases-parecidas");
+        if (frases) frases.insertAdjacentHTML("beforebegin", html); else res.insertAdjacentHTML("beforeend", html);
+      }
     }
   } catch (err) {
     if (minhaBusca !== ultimaBusca) return;
@@ -496,6 +551,7 @@ $("#form-traduzir").addEventListener("submit", (e) => { e.preventDefault(); entr
   irPara();
   aplicarDirecao();
   try { await carregarDicionario(); } catch (e) { console.warn("Dicionário indisponível", e); }
+  iniciarBusca(); // baixa (na primeira vez) e prepara o banco de frases em segundo plano
 
   // Já baixou o tradutor desta direção? Carrega do armazenamento do celular, sem internet.
   if (modeloJaBaixado(direcao)) iniciarWorker().postMessage({ tipo: "carregar", direcao, origem: origemDoModelo(direcao) });

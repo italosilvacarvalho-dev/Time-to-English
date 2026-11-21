@@ -1,6 +1,6 @@
 // Service worker: guarda o app no celular para abrir sem internet.
 // Ao mudar arquivos do app, aumente VERSAO para o celular pegar a atualização.
-const VERSAO = "v3";
+const VERSAO = "v4";
 const CACHE_APP = `tte-app-${VERSAO}`;
 const CACHE_VENDOR = "tte-vendor-transformers-3.8.1";
 
@@ -10,6 +10,7 @@ const ARQUIVOS_APP = [
   "/styles.css",
   "/app.js",
   "/translator-worker.js",
+  "/busca-worker.js",
   "/manifest.webmanifest",
   "/data/expressoes.json",
   "/icons/icon-192.png",
@@ -57,6 +58,7 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return; // Hugging Face etc.: o próprio tradutor cuida do cache
   if (url.pathname.startsWith("/models/")) return; // modelos: guardados pelo tradutor (transformers-cache)
+  if (url.pathname.startsWith("/dados/")) return;  // banco de frases: guardado pelo próprio app (tte-dados)
 
   // Bibliotecas grandes: primeiro do celular, depois da rede.
   if (url.pathname.startsWith("/vendor/")) {

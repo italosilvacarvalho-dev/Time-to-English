@@ -1,5 +1,6 @@
 // Cloudflare Worker: serve o app (arquivos de /public) e os modelos de IA guardados no R2.
 //   /models/<caminho>  -> arquivo do bucket R2 (binding MODELS)
+//   /dados/<caminho>   -> arquivo "dados/<caminho>" do mesmo bucket (banco de frases)
 //   qualquer outro     -> arquivos estáticos do app (binding ASSETS)
 
 const TIPOS = {
@@ -7,25 +8,28 @@ const TIPOS = {
   onnx: "application/octet-stream",
   spm: "application/octet-stream",
   txt: "text/plain; charset=utf-8",
+  tsv: "text/plain; charset=utf-8",
   bin: "application/octet-stream",
 };
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (url.pathname.startsWith("/models/")) return servirModelo(request, env, url);
+    if (url.pathname.startsWith("/models/")) return servirModelo(request, env, url, "/models/", "");
+    if (url.pathname.startsWith("/dados/")) return servirModelo(request, env, url, "/dados/", "dados/");
     return env.ASSETS.fetch(request);
   },
 };
 
-async function servirModelo(request, env, url) {
+async function servirModelo(request, env, url, prefixo, pastaR2) {
   if (request.method !== "GET" && request.method !== "HEAD") {
     return new Response("Método não permitido", { status: 405, headers: { Allow: "GET, HEAD" } });
   }
   if (!env.MODELS) return new Response("R2 não configurado", { status: 503 });
 
-  const chave = decodeURIComponent(url.pathname.slice("/models/".length));
-  if (!chave || chave.includes("..")) return new Response("Não encontrado", { status: 404 });
+  const resto = decodeURIComponent(url.pathname.slice(prefixo.length));
+  if (!resto || resto.includes("..")) return new Response("Não encontrado", { status: 404 });
+  const chave = pastaR2 + resto;
 
   const objeto = request.method === "HEAD"
     ? await env.MODELS.head(chave)
@@ -39,7 +43,8 @@ async function servirModelo(request, env, url) {
   if (!headers.has("content-type")) headers.set("content-type", TIPOS[ext] || "application/octet-stream");
   headers.set("etag", objeto.httpEtag);
   headers.set("accept-ranges", "bytes");
-  headers.set("cache-control", "public, max-age=31536000, immutable");
+  // Modelos não mudam; o banco de frases pode ser atualizado, então o celular confere de vez em quando.
+  headers.set("cache-control", pastaR2 ? "public, max-age=86400" : "public, max-age=31536000, immutable");
   headers.set("cross-origin-resource-policy", "same-origin");
 
   // HEAD, ou condição If-None-Match atendida: sem corpo.

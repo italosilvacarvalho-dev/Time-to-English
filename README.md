@@ -3,7 +3,8 @@
 App web (PWA) para aprender **inglês do dia a dia** e usar **offline** no celular.
 
 **Módulo atual: Traduzir (inglês ⇄ português)**
-- Dicionário de expressões informais com tradução, contexto, exemplo e "também se diz". Funciona offline desde o primeiro acesso.
+- Dicionário com 130+ expressões informais (restaurante, transporte, compras, trabalho, conversa, gírias, phrasal verbs), com tradução, contexto, exemplo e "também se diz". Funciona offline desde o primeiro acesso.
+- Banco de frases reais (Tatoeba): dezenas de milhares de pares português ⇄ inglês traduzidos por pessoas, com busca por frases parecidas, offline.
 - Tradutor offline para qualquer frase, nas duas direções: modelos de IA ([opus-mt-en-ROMANCE](https://huggingface.co/Helsinki-NLP/opus-mt-en-ROMANCE) e [opus-mt-ROMANCE-en](https://huggingface.co/Helsinki-NLP/opus-mt-ROMANCE-en)) rodam dentro do navegador. Cerca de 115 MB por direção, baixados uma vez.
 - Em português → inglês, o app também mostra "como falam na rua" quando reconhece uma expressão do dicionário.
 - Pronúncia com a voz do próprio celular.
@@ -17,7 +18,7 @@ Próximo módulo: **Falar** (português falado → inglês).
 |---|---|
 | GitHub (este repositório) | Código do app. Cada push na `main` publica automaticamente. |
 | Cloudflare Workers | Serve o app (`public/`) e repassa `/models/*` para o R2 (`src/worker.js`). |
-| Cloudflare R2 | Modelos de IA (arquivos grandes, enviados uma vez). |
+| Cloudflare R2 | Modelos de IA e banco de frases (arquivos grandes, enviados pelos workflows). |
 | Celular | Guarda o app (service worker) e o modelo (Cache Storage) para usar sem internet. |
 
 Se o R2 ainda não tiver os modelos, o app baixa direto do Hugging Face. Assim ele funciona desde o primeiro dia.
@@ -49,7 +50,10 @@ npx wrangler login
 npm run modelos
 ```
 
-### 4. Instalar no celular
+### 4. Enviar o banco de frases para o R2
+GitHub → **Actions** → **Enviar banco de frases para o R2** → **Run workflow**. Ele baixa as frases do Tatoeba, fica com as mais curtas (as mais úteis no dia a dia) e envia para o R2. Pode rodar de novo quando quiser atualizar.
+
+### 5. Instalar no celular
 Abra o endereço no **Chrome** → menu ⋮ → **Adicionar à tela inicial**. Abra o app, toque em **Baixar tradutor** (de preferência no Wi-Fi) e pronto: funciona offline.
 
 ## Desenvolvimento local
@@ -62,4 +66,5 @@ npm run dev        # http://localhost:8787
 Ao mudar arquivos do app, aumente `VERSAO` em `public/sw.js`. Assim o celular pega a versão nova na próxima vez que abrir com internet.
 
 ## Créditos
+- Frases: [Tatoeba](https://tatoeba.org), licença CC BY 2.0 FR.
 - Tradução: modelo OPUS-MT (Helsinki-NLP), licença CC-BY 4.0, convertido por Xenova. Roda com [Transformers.js](https://github.com/huggingface/transformers.js).
