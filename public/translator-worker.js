@@ -76,7 +76,13 @@ self.onmessage = async (ev) => {
       await carregar(msg.direcao, msg.origem);
     } else if (msg.tipo === "traduzir") {
       const t = await carregar(msg.direcao, msg.origem);
-      const saida = await t(MODELOS[msg.direcao].prefixo + msg.texto, { max_new_tokens: 256 });
+      // Uma tradução raramente passa de ~3x o tamanho do original. Limitar evita textos enormes.
+      const palavras = msg.texto.trim().split(/\s+/).length;
+      const saida = await t(MODELOS[msg.direcao].prefixo + msg.texto, {
+        max_new_tokens: Math.min(200, palavras * 4 + 12),
+        no_repeat_ngram_size: 3,   // proíbe repetir o mesmo trecho de 3 pedaços
+        repetition_penalty: 1.3,   // desestimula repetir palavras
+      });
       self.postMessage({ tipo: "traducao", id: msg.id, texto: saida[0].translation_text });
     }
   } catch (e) {

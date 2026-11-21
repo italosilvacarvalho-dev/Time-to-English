@@ -135,9 +135,57 @@ async function carregarDicionario() {
     for (const forma of [e.en, ...(e.aliases || [])]) indexar("en", forma, e);
     // "Tô sem grana / Tô duro" vira duas formas; o que está entre parênteses é explicação.
     const formasPt = String(e.pt).replace(/\([^)]*\)/g, " ").split(/\s*\/\s*|,\s*/);
-    for (const forma of formasPt) indexar("pt", forma, e);
+    for (const forma of [...formasPt, ...(e.ptAliases || [])]) indexar("pt", forma, e);
   }
   for (const l of ["en", "pt"]) indices[l].frases.sort((a, b) => b[0].length - a[0].length);
+}
+
+/* ---------- Português de internet → português que o tradutor entende ---------- */
+// O modelo aprendeu com textos mais formais: "eai", "vc", "belezinha" o confundem.
+// O texto que você digitou continua aparecendo igual; só o que vai para o tradutor é ajustado.
+const GIRIAS_PT = [
+  [/\b(eai|eae|eaí|e ae|e ai|iai|iae)\b/gi, "e aí"],
+  [/\b(vc|vcê|cê|ce)\b/gi, "você"],
+  [/\bvcs\b/gi, "vocês"],
+  [/\b(tb|tbm|tmb)\b/gi, "também"],
+  [/\b(pq|pk)\b/gi, "porque"],
+  [/\b(blz|belezinha|beleza pura)\b/gi, "beleza"],
+  [/\b(td|tdo)\b/gi, "tudo"],
+  [/\b(mto|mt)\b/gi, "muito"],
+  [/\b(msm)\b/gi, "mesmo"],
+  [/\b(hj)\b/gi, "hoje"],
+  [/\b(qnd|qdo)\b/gi, "quando"],
+  [/\b(obg|brigado|brigada|vlw|valeu)\b/gi, "obrigado"],
+  [/\b(maninho|maninha|mano|mana|brother|bro|véi|vei|velho)\b/gi, "amigo"],
+];
+// Só para o tradutor (deixa a frase mais "certinha"); o dicionário já conhece estas formas.
+const FORMAS_FALADAS_PT = [
+  [/\b(tô|to)\b/gi, "estou"],
+  [/\b(tá|ta)\b/gi, "está"],
+  [/\b(pra|pro)\b/gi, "para"],
+  [/\b(bora|borá)\b/gi, "vamos"],
+  [/\b(q)\b/gi, "que"],
+  [/\b(n|ñ)\b/gi, "não"],
+];
+// \b do JavaScript não entende acentos; estas fronteiras entendem.
+const FRONTEIRA = (re) => new RegExp(re.source.replace(/^\\b/, "(?<![\\p{L}\\p{N}])").replace(/\\b$/, "(?![\\p{L}\\p{N}])"), "giu");
+const GIRIAS_PT_U = GIRIAS_PT.map(([re, troca]) => [FRONTEIRA(re), troca]);
+const FORMAS_FALADAS_PT_U = FORMAS_FALADAS_PT.map(([re, troca]) => [FRONTEIRA(re), troca]);
+function ajustarPortugues(texto, paraTradutor = false) {
+  let t = String(texto);
+  for (const [re, troca] of GIRIAS_PT_U) t = t.replace(re, troca);
+  if (paraTradutor) for (const [re, troca] of FORMAS_FALADAS_PT_U) t = t.replace(re, troca);
+  return t.replace(/\s+/g, " ").trim();
+}
+
+// Se o modelo ainda assim se perder e repetir palavras ("hey, hey, hey…"), corta a repetição.
+function limparRepeticao(saida, entrada) {
+  let t = String(saida).trim();
+  const antes = t;
+  // mesma palavra ou par de palavras repetido 3+ vezes seguidas → fica uma vez só
+  t = t.replace(/(\b[\p{L}'’]+(?:\s+[\p{L}'’]+)?)(?:[\s,.!?;-]+\1\b){2,}/giu, "$1");
+  const longaDemais = t.split(/\s+/).length > entrada.split(/\s+/).length * 4 + 6;
+  return { texto: t, duvidosa: t !== antes || longaDemais };
 }
 
 function buscarExpressoes(texto, lingua, ignorar = []) {
@@ -363,7 +411,13 @@ async function traduzir(textoBruto) {
   const d = direcao;
   const ptEn = d === "pt-en";
   mostrarExemplos(texto);
-  const { exata, dentro } = buscarExpressoes(texto, ptEn ? "pt" : "en");
+  let { exata, dentro } = buscarExpressoes(texto, ptEn ? "pt" : "en");
+  if (ptEn) {
+    // Tenta também com as gírias de internet ajustadas ("eai" → "e aí", "belezinha" → "beleza").
+    const ajustada = buscarExpressoes(ajustarPortugues(texto), "pt", dentro);
+    exata = exata || ajustada.exata;
+    dentro = [...dentro, ...ajustada.dentro.filter((e) => e !== exata)].slice(0, 4);
+  }
   const res = $("#resultado");
   const tituloExtra = ptEn ? "Como falam na rua" : "Expressão nesta frase";
 
@@ -387,11 +441,14 @@ async function traduzir(textoBruto) {
     `<p class="pt carregando" data-aguardando-modelo>${modeloPronto[d] ? "Traduzindo…" : "Preparando o tradutor…"}</p>`) + extras;
 
   try {
-    const traducao = await pedirTraducao(texto, d);
+    const bruta = await pedirTraducao(ptEn ? ajustarPortugues(texto, true) : texto, d);
     if (minhaBusca !== ultimaBusca || d !== direcao) return;
     const alvo = $("#cartao-traducao .carregando");
     if (!alvo) return;
-    alvo.outerHTML = `<p class="pt">${esc(traducao)}</p>`;
+    const { texto: traducao, duvidosa } = limparRepeticao(bruta, texto);
+    alvo.outerHTML = `<p class="pt">${esc(traducao)}</p>` + (duvidosa
+      ? `<p class="aviso">O tradutor offline se confundiu com essa frase. Tente escrever de um jeito mais simples ou em partes menores.</p>`
+      : "");
     const en = ptEn ? traducao : texto;
     const pt = ptEn ? texto : traducao;
     $("#acoes-traducao").insertAdjacentHTML("afterbegin",
