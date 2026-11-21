@@ -643,6 +643,13 @@ function falhaVoz(msg) {
   if (b) { b.hidden = false; b.textContent = "Tentar de novo"; }
   const p = $("#voz-progresso");
   if (p) p.hidden = true;
+  // Detalhe técnico do erro, pequeno, para ajudar a diagnosticar.
+  const c = $("#cartao-voz");
+  if (c) {
+    let det = c.querySelector(".erro-detalhe");
+    if (!det) { det = document.createElement("span"); det.className = "erro-detalhe selecionavel"; c.querySelector(".modelo-texto").appendChild(det); }
+    det.textContent = "Detalhe: " + String(msg || "").slice(0, 200);
+  }
   statusVoz("");
 }
 
