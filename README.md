@@ -3,7 +3,7 @@
 App web (PWA) para aprender **inglês do dia a dia** e usar **offline** no celular.
 
 **Módulo atual: Traduzir (inglês ⇄ português)**
-- Dicionário com 220+ expressões informais (conversa, internet e vídeos, gírias, phrasal verbs, restaurante, transporte, compras, trabalho), com tradução, contexto, exemplo e "também se diz". Funciona offline desde o primeiro acesso.
+- Dicionário com quase 300 expressões informais (conversa, internet e vídeos, gírias, phrasal verbs, restaurante, transporte, compras, trabalho), com tradução, contexto, exemplo e "também se diz". Funciona offline desde o primeiro acesso.
 - Banco de frases reais (Tatoeba): dezenas de milhares de pares português ⇄ inglês traduzidos por pessoas, com busca por frases parecidas, offline.
 - Tradutor offline para qualquer frase, nas duas direções: modelos de IA ([opus-mt-en-ROMANCE](https://huggingface.co/Helsinki-NLP/opus-mt-en-ROMANCE) e [opus-mt-ROMANCE-en](https://huggingface.co/Helsinki-NLP/opus-mt-ROMANCE-en)) rodam dentro do navegador. Cerca de 115 MB por direção, baixados uma vez.
 - Em português → inglês, o app também mostra "como falam na rua" quando reconhece uma expressão do dicionário.

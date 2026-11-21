@@ -20,7 +20,6 @@ const DIRECOES = {
     subDestino: "Em português",
     modeloTitulo: "Tradutor offline: inglês → português",
     inverterLabel: "Inverter: traduzir de português para inglês",
-    exemplos: ["What's up?", "I'm broke", "Hang out", "No way!", "It's a piece of cake", "I'm good"],
   },
   "pt-en": {
     origem: "Português", destino: "Inglês",
@@ -28,7 +27,6 @@ const DIRECOES = {
     subDestino: "Em inglês",
     modeloTitulo: "Tradutor offline: português → inglês",
     inverterLabel: "Inverter: traduzir de inglês para português",
-    exemplos: ["Tô morrendo de fome", "Tô duro", "Foi mal", "É moleza", "Deixa pra lá", "Quanto tempo!"],
   },
 };
 let direcao = guardar.ler("tte.direcao", "en-pt");
@@ -214,7 +212,6 @@ function aplicarDirecao() {
   $("#rotulo-entrada").textContent = d.rotulo;
   $("#btn-inverter").setAttribute("aria-label", d.inverterLabel);
   $("#modelo-titulo").textContent = d.modeloTitulo;
-  mostrarExemplos("");
   atualizarCartaoModelo();
   atualizarSelo();
 }
@@ -230,18 +227,6 @@ $("#btn-inverter").addEventListener("click", () => {
   $("#resultado").innerHTML = "";
   if (modeloJaBaixado(direcao)) iniciarWorker().postMessage({ tipo: "carregar", direcao, origem: origemDoModelo(direcao) });
   if ($("#entrada").value.trim()) traduzir($("#entrada").value);
-});
-
-function mostrarExemplos(ativo) {
-  $("#exemplos").innerHTML = DIRECOES[direcao].exemplos.map((x) =>
-    `<button type="button" class="chip" data-ex="${esc(x)}" aria-pressed="${norm(x) === norm(ativo)}">${esc(x)}</button>`).join("");
-}
-$("#exemplos").addEventListener("click", (e) => {
-  const b = e.target.closest("[data-ex]");
-  if (!b) return;
-  $("#entrada").value = b.dataset.ex;
-  ajustarAltura();
-  traduzir(b.dataset.ex);
 });
 
 /* ---------- Tradutor offline (modelos de IA no navegador) ---------- */
@@ -501,7 +486,6 @@ async function traduzir(textoBruto) {
   const minhaBusca = ++ultimaBusca;
   const d = direcao;
   const ptEn = d === "pt-en";
-  mostrarExemplos(texto);
   let { exata, dentro } = buscarExpressoes(texto, ptEn ? "pt" : "en");
   if (ptEn) {
     // Tenta também com as gírias de internet ajustadas ("eai" → "e aí", "belezinha" → "beleza").
