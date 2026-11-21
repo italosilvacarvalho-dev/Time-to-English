@@ -1,16 +1,21 @@
-// Roda o modelo de tradução fora da tela principal, para o app não travar.
+// Roda os modelos de tradução fora da tela principal, para o app não travar.
 import { pipeline, env } from "/vendor/transformers.min.js";
 
-const MODELO = "Xenova/opus-mt-en-ROMANCE";
-// Arquivos baixados na primeira vez (encoder + decoder quantizados + tokenizer): ~119 MB.
+// Cada direção usa um modelo. O inglês→português precisa da etiqueta do idioma de destino.
+const MODELOS = {
+  "en-pt": { id: "Xenova/opus-mt-en-ROMANCE", prefixo: ">>pt_BR<< " },
+  "pt-en": { id: "Xenova/opus-mt-ROMANCE-en", prefixo: "" },
+};
+// Arquivos baixados na primeira vez de cada modelo (encoder + decoder quantizados + tokenizer): ~119 MB.
 const TAMANHO_ESTIMADO = 119_300_000;
 
 env.allowLocalModels = false;
 env.useBrowserCache = true; // guarda os arquivos no celular (Cache Storage) para uso offline
 env.backends.onnx.wasm.wasmPaths = "/vendor/";
 
-let tradutor = null;
-let carregando = null;
+const prontos = new Map();   // direção -> tradutor
+const carregando = new Map(); // direção -> promessa
+let fila = Promise.resolve(); // carrega um modelo de cada vez (a origem é uma configuração global)
 
 function usarOrigem(origem) {
   if (origem === "r2") {
@@ -22,23 +27,26 @@ function usarOrigem(origem) {
   }
 }
 
-// Prefere o R2 (mesmo endereço do app). Se o R2 ainda não tiver os modelos, usa o Hugging Face.
-async function descobrirOrigem() {
+// Prefere o R2 (mesmo endereço do app). Se o R2 não tiver o modelo, usa o Hugging Face.
+async function descobrirOrigem(id) {
   try {
-    const r = await fetch(`/models/${MODELO}/config.json`, { method: "HEAD", cache: "no-store" });
+    const r = await fetch(`/models/${id}/config.json`, { method: "HEAD", cache: "no-store" });
     if (r.ok) return "r2";
   } catch (e) { /* sem internet ou sem R2 */ }
   return "huggingface";
 }
 
-async function carregar(origemSalva) {
-  if (tradutor) return tradutor;
-  if (carregando) return carregando;
-  carregando = (async () => {
-    const origem = origemSalva || (await descobrirOrigem());
+function carregar(direcao, origemSalva) {
+  if (prontos.has(direcao)) return Promise.resolve(prontos.get(direcao));
+  if (carregando.has(direcao)) return carregando.get(direcao);
+  const modelo = MODELOS[direcao];
+  if (!modelo) return Promise.reject(new Error("Direção desconhecida: " + direcao));
+
+  const promessa = (fila = fila.catch(() => {}).then(async () => {
+    const origem = origemSalva || (await descobrirOrigem(modelo.id));
     usarOrigem(origem);
     const arquivos = new Map();
-    tradutor = await pipeline("translation", MODELO, {
+    const tradutor = await pipeline("translation", modelo.id, {
       dtype: "q8",
       device: "wasm",
       progress_callback: (p) => {
@@ -47,33 +55,31 @@ async function carregar(origemSalva) {
           let lido = 0, total = 0;
           for (const a of arquivos.values()) { lido += a.loaded; total += a.total; }
           const pct = Math.min(99, Math.round((lido / Math.max(total, TAMANHO_ESTIMADO)) * 100));
-          self.postMessage({ tipo: "progresso", pct });
+          self.postMessage({ tipo: "progresso", direcao, pct });
         }
       },
     });
-    self.postMessage({ tipo: "pronto", origem });
+    prontos.set(direcao, tradutor);
+    self.postMessage({ tipo: "pronto", direcao, origem });
     return tradutor;
-  })();
-  try {
-    return await carregando;
-  } catch (e) {
-    carregando = null;
-    throw e;
-  }
+  }));
+
+  carregando.set(direcao, promessa);
+  promessa.catch(() => carregando.delete(direcao));
+  return promessa;
 }
 
 self.onmessage = async (ev) => {
   const msg = ev.data || {};
   try {
     if (msg.tipo === "carregar") {
-      await carregar(msg.origem);
+      await carregar(msg.direcao, msg.origem);
     } else if (msg.tipo === "traduzir") {
-      const t = await carregar(msg.origem);
-      // ">>pt_BR<<" diz ao modelo para traduzir para português do Brasil.
-      const saida = await t(">>pt_BR<< " + msg.texto, { max_new_tokens: 256 });
+      const t = await carregar(msg.direcao, msg.origem);
+      const saida = await t(MODELOS[msg.direcao].prefixo + msg.texto, { max_new_tokens: 256 });
       self.postMessage({ tipo: "traducao", id: msg.id, texto: saida[0].translation_text });
     }
   } catch (e) {
-    self.postMessage({ tipo: "erro", id: msg.id, mensagem: String((e && e.message) || e) });
+    self.postMessage({ tipo: "erro", id: msg.id, direcao: msg.direcao, mensagem: String((e && e.message) || e) });
   }
 };

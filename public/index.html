@@ -38,13 +38,15 @@
       <!-- TRADUZIR -->
       <section id="tela-traduzir" class="tela" aria-labelledby="titulo">
         <div class="direcao">
-          <span class="pilula pilula-destaque">Inglês</span>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
-          <span class="pilula">Português</span>
+          <span id="lingua-origem" class="pilula pilula-destaque">Inglês</span>
+          <button id="btn-inverter" class="btn-inverter" type="button" aria-label="Inverter: traduzir de português para inglês">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7h13"/><path d="m16 3 4 4-4 4"/><path d="M17 17H4"/><path d="m8 21-4-4 4-4"/></svg>
+          </button>
+          <span id="lingua-destino" class="pilula">Português</span>
         </div>
 
         <form id="form-traduzir" class="campo" autocomplete="off">
-          <label for="entrada" class="so-leitor">Palavra ou frase em inglês</label>
+          <label id="rotulo-entrada" for="entrada" class="so-leitor">Palavra ou frase em inglês</label>
           <textarea id="entrada" rows="1" placeholder="Digite em inglês…" enterkeyhint="go" spellcheck="false" autocapitalize="off"></textarea>
           <button id="btn-traduzir" class="btn-primario" type="submit">Traduzir</button>
         </form>
@@ -58,7 +60,7 @@
 
         <div id="cartao-modelo" class="cartao cartao-modelo" hidden>
           <div class="modelo-texto">
-            <strong>Tradutor offline</strong>
+            <strong id="modelo-titulo">Tradutor offline</strong>
             <span id="modelo-desc">Baixe uma vez (cerca de 115 MB, de preferência no Wi-Fi) para traduzir qualquer frase sem internet. As expressões do dicionário já funcionam offline.</span>
           </div>
           <div id="modelo-progresso" class="progresso" hidden>

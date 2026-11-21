@@ -1,16 +1,46 @@
-// Time to English — módulo Traduzir (inglês → português), offline.
+// Time to English — módulo Traduzir (inglês ⇄ português), offline.
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 const guardar = {
   ler(k, padrao) { try { const v = localStorage.getItem(k); return v === null ? padrao : JSON.parse(v); } catch (e) { return padrao; } },
-  gravar(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
+  gravar(k, v) { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
 };
 
 const ICONE_OUVIR = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>';
 const ICONE_SALVAR = (cheio) => `<svg width="20" height="20" viewBox="0 0 24 24" fill="${cheio ? "currentColor" : "none"}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>`;
 const ICONE_REMOVER = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>';
+
+/* ---------- Direções de tradução ---------- */
+const DIRECOES = {
+  "en-pt": {
+    origem: "Inglês", destino: "Português",
+    placeholder: "Digite em inglês…", rotulo: "Palavra ou frase em inglês",
+    subDestino: "Em português",
+    modeloTitulo: "Tradutor offline: inglês → português",
+    inverterLabel: "Inverter: traduzir de português para inglês",
+    exemplos: ["What's up?", "I'm broke", "Hang out", "No way!", "It's a piece of cake", "I'm good"],
+  },
+  "pt-en": {
+    origem: "Português", destino: "Inglês",
+    placeholder: "Digite em português…", rotulo: "Palavra ou frase em português",
+    subDestino: "Em inglês",
+    modeloTitulo: "Tradutor offline: português → inglês",
+    inverterLabel: "Inverter: traduzir de inglês para português",
+    exemplos: ["Tô morrendo de fome", "Tô duro", "Foi mal", "É moleza", "Deixa pra lá", "Quanto tempo!"],
+  },
+};
+let direcao = guardar.ler("tte.direcao", "en-pt");
+if (!DIRECOES[direcao]) direcao = "en-pt";
+
+// Migra a marcação da versão anterior (só existia inglês → português).
+if (guardar.ler("tte.modelo", null) === "pronto") {
+  guardar.gravar("tte.modelo.en-pt", "pronto");
+  guardar.gravar("tte.origem.en-pt", guardar.ler("tte.modelo.origem", null));
+  guardar.gravar("tte.modelo", null);
+  guardar.gravar("tte.modelo.origem", null);
+}
 
 /* ---------- Tema claro/escuro ---------- */
 function aplicarTema(t) {
@@ -87,39 +117,72 @@ $("#lista-salvas").addEventListener("click", (e) => {
 /* ---------- Dicionário de expressões (funciona offline desde o início) ---------- */
 const norm = (t) => String(t || "").toLowerCase().replace(/[’‘]/g, "'").replace(/[…?!.,;:"“”()]/g, " ").replace(/\s+/g, " ").trim();
 let expressoes = [];
-const indice = new Map(); // forma normalizada -> expressão
-const indiceFrases = []; // formas com 2+ palavras, para achar dentro de frases
+// Índices por idioma: forma exata -> expressão, e formas com 2+ palavras para achar dentro de frases.
+const indices = { en: { exato: new Map(), frases: [] }, pt: { exato: new Map(), frases: [] } };
+
+function indexar(lingua, forma, e) {
+  const n = norm(forma);
+  if (!n) return;
+  const idx = indices[lingua];
+  if (!idx.exato.has(n)) idx.exato.set(n, e);
+  if (n.includes(" ")) idx.frases.push([n, e]);
+}
 
 async function carregarDicionario() {
   const r = await fetch("/data/expressoes.json");
   expressoes = await r.json();
   for (const e of expressoes) {
-    for (const forma of [e.en, ...(e.aliases || [])]) {
-      const n = norm(forma);
-      if (!n) continue;
-      if (!indice.has(n)) indice.set(n, e);
-      if (n.includes(" ")) indiceFrases.push([n, e]);
-    }
+    for (const forma of [e.en, ...(e.aliases || [])]) indexar("en", forma, e);
+    // "Tô sem grana / Tô duro" vira duas formas; o que está entre parênteses é explicação.
+    const formasPt = String(e.pt).replace(/\([^)]*\)/g, " ").split(/\s*\/\s*|,\s*/);
+    for (const forma of formasPt) indexar("pt", forma, e);
   }
-  indiceFrases.sort((a, b) => b[0].length - a[0].length);
+  for (const l of ["en", "pt"]) indices[l].frases.sort((a, b) => b[0].length - a[0].length);
 }
 
-function buscarExpressoes(texto) {
+function buscarExpressoes(texto, lingua, ignorar = []) {
   const n = norm(texto);
-  const exata = indice.get(n) || null;
+  const idx = indices[lingua];
+  const exata = idx.exato.get(n) || null;
   const dentro = [];
   const alvo = ` ${n} `;
-  for (const [forma, e] of indiceFrases) {
-    if (e === exata || dentro.includes(e)) continue;
+  for (const [forma, e] of idx.frases) {
+    if (e === exata || dentro.includes(e) || ignorar.includes(e)) continue;
     if (alvo.includes(` ${forma} `)) dentro.push(e);
     if (dentro.length >= 4) break;
   }
   return { exata, dentro };
 }
 
-const EXEMPLOS = ["What's up?", "I'm broke", "Hang out", "No way!", "It's a piece of cake", "I'm good"];
+/* ---------- Direção na tela ---------- */
+function aplicarDirecao() {
+  const d = DIRECOES[direcao];
+  $("#lingua-origem").textContent = d.origem;
+  $("#lingua-destino").textContent = d.destino;
+  $("#entrada").placeholder = d.placeholder;
+  $("#rotulo-entrada").textContent = d.rotulo;
+  $("#btn-inverter").setAttribute("aria-label", d.inverterLabel);
+  $("#modelo-titulo").textContent = d.modeloTitulo;
+  mostrarExemplos("");
+  atualizarCartaoModelo();
+  atualizarSelo();
+}
+
+$("#btn-inverter").addEventListener("click", () => {
+  const anterior = $("#cartao-traducao .pt:not(.carregando)");
+  direcao = direcao === "en-pt" ? "pt-en" : "en-pt";
+  guardar.gravar("tte.direcao", direcao);
+  // Se já havia uma tradução, ela vira o novo texto de entrada (como nos tradutores conhecidos).
+  if (anterior) $("#entrada").value = anterior.textContent;
+  ajustarAltura();
+  aplicarDirecao();
+  $("#resultado").innerHTML = "";
+  if (modeloJaBaixado(direcao)) iniciarWorker().postMessage({ tipo: "carregar", direcao, origem: origemDoModelo(direcao) });
+  if ($("#entrada").value.trim()) traduzir($("#entrada").value);
+});
+
 function mostrarExemplos(ativo) {
-  $("#exemplos").innerHTML = EXEMPLOS.map((x) =>
+  $("#exemplos").innerHTML = DIRECOES[direcao].exemplos.map((x) =>
     `<button type="button" class="chip" data-ex="${esc(x)}" aria-pressed="${norm(x) === norm(ativo)}">${esc(x)}</button>`).join("");
 }
 $("#exemplos").addEventListener("click", (e) => {
@@ -130,55 +193,58 @@ $("#exemplos").addEventListener("click", (e) => {
   traduzir(b.dataset.ex);
 });
 
-/* ---------- Tradutor offline (modelo de IA no navegador) ---------- */
+/* ---------- Tradutor offline (modelos de IA no navegador) ---------- */
 let worker = null;
-let modeloPronto = false;
-let modeloOrigem = guardar.ler("tte.modelo.origem", null);
+const modeloPronto = { "en-pt": false, "pt-en": false };
+const baixando = { "en-pt": false, "pt-en": false };
 let pedidoId = 0;
 const pendentes = new Map();
+
+const modeloJaBaixado = (d) => guardar.ler("tte.modelo." + d, null) === "pronto";
+const origemDoModelo = (d) => guardar.ler("tte.origem." + d, null);
 
 function iniciarWorker() {
   if (worker) return worker;
   worker = new Worker("/translator-worker.js", { type: "module" });
   worker.onmessage = (ev) => {
     const m = ev.data;
-    if (m.tipo === "progresso") mostrarProgresso(m.pct);
-    else if (m.tipo === "pronto") {
-      modeloPronto = true;
-      modeloOrigem = m.origem;
-      guardar.gravar("tte.modelo", "pronto");
-      guardar.gravar("tte.modelo.origem", m.origem);
+    if (m.tipo === "progresso") {
+      if (m.direcao === direcao) mostrarProgresso(m.pct);
+    } else if (m.tipo === "pronto") {
+      modeloPronto[m.direcao] = true;
+      baixando[m.direcao] = false;
+      guardar.gravar("tte.modelo." + m.direcao, "pronto");
+      guardar.gravar("tte.origem." + m.direcao, m.origem);
       atualizarCartaoModelo();
       atualizarSelo();
       const atual = $("#entrada").value.trim();
-      if (atual && document.querySelector("[data-aguardando-modelo]")) traduzir(atual);
+      if (m.direcao === direcao && atual && document.querySelector("[data-aguardando-modelo]")) traduzir(atual);
     } else if (m.tipo === "traducao") {
       const p = pendentes.get(m.id);
       if (p) { pendentes.delete(m.id); p.resolve(m.texto); }
     } else if (m.tipo === "erro") {
       if (m.id && pendentes.has(m.id)) { pendentes.get(m.id).reject(new Error(m.mensagem)); pendentes.delete(m.id); }
-      else falhaNoDownload(m.mensagem);
+      falhaNoModelo(m.direcao, m.mensagem);
     }
   };
   return worker;
 }
 
-function pedirTraducao(texto) {
+function pedirTraducao(texto, d) {
   iniciarWorker();
   const id = ++pedidoId;
   return new Promise((resolve, reject) => {
     pendentes.set(id, { resolve, reject });
-    worker.postMessage({ tipo: "traduzir", id, texto, origem: modeloOrigem });
+    worker.postMessage({ tipo: "traduzir", id, texto, direcao: d, origem: origemDoModelo(d) });
   });
 }
 
 function baixarModelo() {
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
-  $("#btn-baixar").hidden = true;
-  $("#modelo-progresso").hidden = false;
-  $("#modelo-desc").textContent = "Baixando… pode continuar usando o app. Na próxima vez não precisa baixar de novo.";
+  baixando[direcao] = true;
+  atualizarCartaoModelo();
   mostrarProgresso(0);
-  iniciarWorker().postMessage({ tipo: "carregar", origem: null });
+  iniciarWorker().postMessage({ tipo: "carregar", direcao, origem: null });
 }
 $("#btn-baixar").addEventListener("click", baixarModelo);
 
@@ -186,29 +252,36 @@ function mostrarProgresso(pct) {
   $("#modelo-barra").style.width = pct + "%";
   $("#modelo-pct").textContent = pct + "%";
 }
-function falhaNoDownload(msg) {
-  console.warn("Falha no tradutor:", msg);
+function falhaNoModelo(d, msg) {
+  console.warn("Falha no tradutor:", d, msg);
+  if (!d) return;
   // Se os arquivos sumiram do celular (limpeza do navegador), pede para baixar de novo.
-  guardar.gravar("tte.modelo", null);
-  modeloPronto = false;
+  guardar.gravar("tte.modelo." + d, null);
+  modeloPronto[d] = false;
+  baixando[d] = false;
+  if (d !== direcao) return;
   atualizarSelo();
-  const aguardando = $("#cartao-traducao [data-aguardando-modelo]");
-  if (aguardando) aguardando.outerHTML = '<p class="aviso" data-aguardando-modelo>O tradutor offline precisa ser baixado de novo (veja o aviso abaixo).</p>';
-  $("#cartao-modelo").hidden = false;
-  $("#modelo-progresso").hidden = true;
-  $("#btn-baixar").hidden = false;
+  atualizarCartaoModelo();
   $("#btn-baixar").textContent = "Tentar de novo";
   $("#modelo-desc").textContent = navigator.onLine
     ? "Não deu para baixar o tradutor. Tente de novo daqui a pouco."
     : "Sem internet. Conecte-se uma vez para baixar o tradutor; depois ele funciona offline.";
+  const aguardando = $("#cartao-traducao [data-aguardando-modelo]");
+  if (aguardando) aguardando.outerHTML = '<p class="aviso" data-aguardando-modelo>O tradutor offline desta direção precisa ser baixado (veja o aviso abaixo).</p>';
 }
 function atualizarCartaoModelo() {
-  const jaBaixado = guardar.ler("tte.modelo", null) === "pronto";
-  $("#cartao-modelo").hidden = modeloPronto || jaBaixado;
+  const pronto = modeloPronto[direcao] || modeloJaBaixado(direcao);
+  $("#cartao-modelo").hidden = pronto;
+  $("#modelo-progresso").hidden = !baixando[direcao];
+  $("#btn-baixar").hidden = baixando[direcao];
+  $("#btn-baixar").textContent = "Baixar tradutor";
+  $("#modelo-desc").textContent = baixando[direcao]
+    ? "Baixando… pode continuar usando o app. Na próxima vez não precisa baixar de novo."
+    : "Baixe uma vez (cerca de 115 MB, de preferência no Wi-Fi) para traduzir qualquer frase sem internet. As expressões do dicionário já funcionam offline.";
 }
 function atualizarSelo() {
   const selo = $("#selo-offline");
-  if (modeloPronto) {
+  if (modeloPronto[direcao]) {
     selo.hidden = false; selo.className = "selo selo-ok"; selo.textContent = "Offline pronto";
   } else if (!navigator.onLine) {
     selo.hidden = false; selo.className = "selo selo-alerta"; selo.textContent = "Sem internet";
@@ -226,18 +299,22 @@ function botaoSalvar(en, pt) {
 }
 
 function cartaoExpressao(e, titulo) {
+  const ptEn = direcao === "pt-en";
   return `
   <article class="cartao">
     ${titulo ? `<p class="rotulo">${esc(titulo)}</p>` : ""}
     <div class="cab">
-      <div class="cab-texto"><span class="en">${esc(e.en)}</span></div>
+      <div class="cab-texto">
+        ${ptEn ? '<span class="sub">Em inglês</span>' : ""}
+        <span class="en">${esc(e.en)}</span>
+      </div>
       <div class="acoes">
         ${botaoSalvar(e.en, e.pt)}
-        <button class="btn-ouvir" type="button" data-ouvir="${esc(e.exEn && e.en.includes("…") ? e.exEn : e.en)}" aria-label="Ouvir pronúncia">${ICONE_OUVIR}</button>
+        <button class="btn-ouvir" type="button" data-ouvir="${esc(e.en.includes("…") ? e.exEn : e.en)}" aria-label="Ouvir pronúncia">${ICONE_OUVIR}</button>
       </div>
     </div>
     <div class="cab-texto">
-      <span class="sub">Em português</span>
+      <span class="sub">${ptEn ? "Significa" : "Em português"}</span>
       <p class="pt">${esc(e.pt)}</p>
     </div>
     <span class="etiqueta etiqueta-laranja">${esc(e.tag)}</span>
@@ -251,22 +328,29 @@ function cartaoExpressao(e, titulo) {
       <p class="ex-pt">${esc(e.exPt)}</p>
       <button class="btn-icone sem-borda" style="align-self:flex-start;margin-left:-10px" type="button" data-ouvir="${esc(e.exEn)}" aria-label="Ouvir o exemplo">${ICONE_OUVIR}</button>
     </div>
-    ${e.alt && e.alt.length ? `<div class="bloco"><span class="sub">Também se diz</span><div class="chips">${e.alt.map((a) => `<span class="chip">${esc(a)}</span>`).join("")}</div></div>` : ""}
+    ${e.alt && e.alt.length ? `<div class="bloco"><span class="sub">Também se diz</span><div class="chips">${e.alt.map((a) => `<span class="chip selecionavel">${esc(a)}</span>`).join("")}</div></div>` : ""}
   </article>`;
 }
 
-function cartaoTraducao(en, conteudoPt) {
+// Cartão da tradução de uma frase livre.
+// Inglês → português: o inglês (que você digitou) em cima, com som; a tradução embaixo.
+// Português → inglês: o português em cima; a tradução em inglês embaixo, grande e com som.
+function cartaoTraducao(texto, conteudo) {
+  const ptEn = direcao === "pt-en";
+  const topo = ptEn
+    ? `<div class="cab-texto"><span class="sub">Você escreveu</span><span class="selecionavel" style="font-size:17px;line-height:1.4;color:var(--text2);overflow-wrap:anywhere">${esc(texto)}</span></div>`
+    : `<div class="cab-texto"><span class="en">${esc(texto)}</span></div>`;
   return `
   <article class="cartao" id="cartao-traducao">
     <div class="cab">
-      <div class="cab-texto"><span class="en">${esc(en)}</span></div>
+      ${topo}
       <div class="acoes" id="acoes-traducao">
-        <button class="btn-ouvir" type="button" data-ouvir="${esc(en)}" aria-label="Ouvir pronúncia">${ICONE_OUVIR}</button>
+        ${ptEn ? "" : `<button class="btn-ouvir" type="button" data-ouvir="${esc(texto)}" aria-label="Ouvir pronúncia">${ICONE_OUVIR}</button>`}
       </div>
     </div>
     <div class="cab-texto">
-      <span class="sub">Em português</span>
-      ${conteudoPt}
+      <span class="sub">${DIRECOES[direcao].subDestino}</span>
+      ${conteudo}
     </div>
   </article>`;
 }
@@ -276,9 +360,12 @@ async function traduzir(textoBruto) {
   const texto = textoBruto.trim();
   if (!texto) return;
   const minhaBusca = ++ultimaBusca;
+  const d = direcao;
+  const ptEn = d === "pt-en";
   mostrarExemplos(texto);
-  const { exata, dentro } = buscarExpressoes(texto);
+  const { exata, dentro } = buscarExpressoes(texto, ptEn ? "pt" : "en");
   const res = $("#resultado");
+  const tituloExtra = ptEn ? "Como falam na rua" : "Expressão nesta frase";
 
   // 1) A expressão está no dicionário: mostra direto, com contexto.
   if (exata) {
@@ -286,27 +373,34 @@ async function traduzir(textoBruto) {
     return;
   }
 
-  // 2) Frase livre: tradutor offline + expressões encontradas dentro dela.
-  const extras = dentro.map((e) => cartaoExpressao(e, "Expressão nesta frase")).join("");
-  const jaBaixado = guardar.ler("tte.modelo", null) === "pronto";
+  // 2) Frase livre: tradutor offline + expressões encontradas.
+  const extras = dentro.map((e) => cartaoExpressao(e, tituloExtra)).join("");
 
-  if (!modeloPronto && !jaBaixado) {
+  if (!modeloPronto[d] && !modeloJaBaixado(d) && !baixando[d]) {
     res.innerHTML = cartaoTraducao(texto,
-      `<p class="aviso" data-aguardando-modelo>Para traduzir frases livres, baixe o tradutor offline (só uma vez, cerca de 115 MB).${dentro.length ? " Enquanto isso, veja as expressões desta frase." : ""}</p>
+      `<p class="aviso" data-aguardando-modelo>Para traduzir frases livres nesta direção, baixe o tradutor offline (só uma vez, cerca de 115 MB).${dentro.length ? " Enquanto isso, veja as expressões desta frase." : ""}</p>
        <button class="btn-secundario" type="button" data-baixar>Baixar tradutor</button>`) + extras;
     return;
   }
 
   res.innerHTML = cartaoTraducao(texto,
-    `<p class="pt carregando" data-aguardando-modelo>${modeloPronto ? "Traduzindo…" : "Preparando o tradutor…"}</p>`) + extras;
+    `<p class="pt carregando" data-aguardando-modelo>${modeloPronto[d] ? "Traduzindo…" : "Preparando o tradutor…"}</p>`) + extras;
 
   try {
-    const pt = await pedirTraducao(texto);
-    if (minhaBusca !== ultimaBusca) return;
+    const traducao = await pedirTraducao(texto, d);
+    if (minhaBusca !== ultimaBusca || d !== direcao) return;
     const alvo = $("#cartao-traducao .carregando");
-    if (alvo) {
-      alvo.outerHTML = `<p class="pt">${esc(pt)}</p>`;
-      $("#acoes-traducao").insertAdjacentHTML("afterbegin", botaoSalvar(texto, pt));
+    if (!alvo) return;
+    alvo.outerHTML = `<p class="pt">${esc(traducao)}</p>`;
+    const en = ptEn ? traducao : texto;
+    const pt = ptEn ? texto : traducao;
+    $("#acoes-traducao").insertAdjacentHTML("afterbegin",
+      botaoSalvar(en, pt) + (ptEn ? `<button class="btn-ouvir" type="button" data-ouvir="${esc(traducao)}" aria-label="Ouvir pronúncia">${ICONE_OUVIR}</button>` : ""));
+    // Português → inglês: procura expressões do dia a dia também no inglês traduzido.
+    if (ptEn) {
+      const maisExpressoes = buscarExpressoes(traducao, "en", dentro);
+      const novas = [maisExpressoes.exata, ...maisExpressoes.dentro].filter((e) => e && !dentro.includes(e));
+      if (novas.length) res.insertAdjacentHTML("beforeend", novas.map((e) => cartaoExpressao(e, tituloExtra)).join(""));
     }
   } catch (err) {
     if (minhaBusca !== ultimaBusca) return;
@@ -322,7 +416,6 @@ $("#resultado").addEventListener("click", (e) => {
   if (b.dataset.ouvir) ouvir(b.dataset.ouvir);
   if ("baixar" in b.dataset) {
     b.remove();
-    $("#cartao-modelo").hidden = false;
     baixarModelo();
     $("#cartao-modelo").scrollIntoView({ behavior: "smooth", block: "center" });
   }
@@ -344,13 +437,11 @@ $("#form-traduzir").addEventListener("submit", (e) => { e.preventDefault(); entr
 /* ---------- Início ---------- */
 (async function iniciar() {
   irPara();
-  mostrarExemplos("");
-  atualizarCartaoModelo();
-  atualizarSelo();
+  aplicarDirecao();
   try { await carregarDicionario(); } catch (e) { console.warn("Dicionário indisponível", e); }
 
-  // Já baixou o tradutor antes? Carrega do armazenamento do celular, sem internet.
-  if (guardar.ler("tte.modelo", null) === "pronto") iniciarWorker().postMessage({ tipo: "carregar", origem: modeloOrigem });
+  // Já baixou o tradutor desta direção? Carrega do armazenamento do celular, sem internet.
+  if (modeloJaBaixado(direcao)) iniciarWorker().postMessage({ tipo: "carregar", direcao, origem: origemDoModelo(direcao) });
 
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("/sw.js").catch((e) => console.warn("Service worker:", e));
