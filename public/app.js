@@ -125,8 +125,11 @@ function indexar(lingua, forma, e) {
   if (!n) return;
   const idx = indices[lingua];
   if (!idx.exato.has(n)) idx.exato.set(n, e);
-  if (n.includes(" ")) idx.frases.push([n, e]);
+  if (n.includes(" ") || ABREVIACOES.has(n)) idx.frases.push([n, e]);
 }
+// Palavras soltas só são procuradas dentro de frases quando não têm outro sentido comum
+// (abreviações de internet e gírias inconfundíveis). "deal", "sick" ou "cool" só batem sozinhas.
+const ABREVIACOES = new Set(["ngl", "tbh", "tbf", "lol", "lmao", "omg", "fomo", "asap", "jk", "omw", "wdym", "nvm", "wth", "sus", "qol", "lowkey", "highkey", "cringe", "cringy", "hangry", "steamrolled", "hellscape", "umpteenth", "kinda", "gonna", "wanna", "gotta", "kkkk", "kkk", "rsrs"]);
 
 async function carregarDicionario() {
   const r = await fetch("/data/expressoes.json");
@@ -197,7 +200,7 @@ function buscarExpressoes(texto, lingua, ignorar = []) {
   for (const [forma, e] of idx.frases) {
     if (e === exata || dentro.includes(e) || ignorar.includes(e)) continue;
     if (alvo.includes(` ${forma} `)) dentro.push(e);
-    if (dentro.length >= 4) break;
+    if (dentro.length >= 3) break;
   }
   return { exata, dentro };
 }
@@ -245,6 +248,7 @@ $("#exemplos").addEventListener("click", (e) => {
 let worker = null;
 const modeloPronto = { "en-pt": false, "pt-en": false };
 const baixando = { "en-pt": false, "pt-en": false };
+const falhou = { "en-pt": false, "pt-en": false };
 let pedidoId = 0;
 const pendentes = new Map();
 
@@ -288,6 +292,7 @@ function pedirTraducao(texto, d) {
 }
 
 function baixarModelo() {
+  falhou[direcao] = false;
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   baixando[direcao] = true;
   atualizarCartaoModelo();
@@ -307,6 +312,7 @@ function falhaNoModelo(d, msg) {
   guardar.gravar("tte.modelo." + d, null);
   modeloPronto[d] = false;
   baixando[d] = false;
+  falhou[d] = true;
   if (d !== direcao) return;
   atualizarSelo();
   atualizarCartaoModelo();
@@ -319,7 +325,8 @@ function falhaNoModelo(d, msg) {
 }
 function atualizarCartaoModelo() {
   const pronto = modeloPronto[direcao] || modeloJaBaixado(direcao);
-  $("#cartao-modelo").hidden = pronto;
+  // O convite para baixar aparece dentro do resultado; este cartão só mostra o progresso ou um erro.
+  $("#cartao-modelo").hidden = pronto || (!baixando[direcao] && !falhou[direcao]);
   $("#modelo-progresso").hidden = !baixando[direcao];
   $("#btn-baixar").hidden = baixando[direcao];
   $("#btn-baixar").textContent = "Baixar tradutor";
@@ -391,35 +398,45 @@ function botaoSalvar(en, pt) {
 
 function cartaoExpressao(e, titulo) {
   const ptEn = direcao === "pt-en";
+  const ouvirTexto = e.en.includes("…") ? e.exEn : e.en;
+  const acoes = `<div class="acoes">${botaoSalvar(e.en, e.pt)}<button class="btn-ouvir" type="button" data-ouvir="${esc(ouvirTexto)}" aria-label="Ouvir pronúncia">${ICONE_OUVIR}</button></div>`;
+
+  // Cartão secundário (expressão encontrada dentro de uma frase): só o essencial.
+  if (titulo) {
+    return `
+  <article class="cartao compacto">
+    <p class="rotulo">${esc(titulo)}</p>
+    <div class="cab">
+      <div class="cab-texto"><span class="en en-menor">${esc(e.en)}</span><span class="pt-menor">${esc(e.pt)}</span></div>
+      ${acoes}
+    </div>
+    <p class="nota">${esc(e.nota)}</p>
+  </article>`;
+  }
+
+  // Cartão principal: tradução em destaque, depois contexto e um exemplo.
   return `
   <article class="cartao">
-    ${titulo ? `<p class="rotulo">${esc(titulo)}</p>` : ""}
     <div class="cab">
       <div class="cab-texto">
         ${ptEn ? '<span class="sub">Em inglês</span>' : ""}
         <span class="en">${esc(e.en)}</span>
       </div>
-      <div class="acoes">
-        ${botaoSalvar(e.en, e.pt)}
-        <button class="btn-ouvir" type="button" data-ouvir="${esc(e.en.includes("…") ? e.exEn : e.en)}" aria-label="Ouvir pronúncia">${ICONE_OUVIR}</button>
-      </div>
+      ${acoes}
     </div>
     <div class="cab-texto">
       <span class="sub">${ptEn ? "Significa" : "Em português"}</span>
       <p class="pt">${esc(e.pt)}</p>
     </div>
     <span class="etiqueta etiqueta-laranja">${esc(e.tag)}</span>
-    <div class="cab-texto">
-      <span style="font-size:13px;font-weight:600">Contexto</span>
-      <p class="nota">${esc(e.nota)}</p>
-    </div>
+    <p class="nota">${esc(e.nota)}</p>
     <div class="exemplo">
-      <span class="sub" style="text-transform:none;letter-spacing:0">Exemplo</span>
-      <p class="ex-en">${esc(e.exEn)}</p>
-      <p class="ex-pt">${esc(e.exPt)}</p>
-      <button class="btn-icone sem-borda" style="align-self:flex-start;margin-left:-10px" type="button" data-ouvir="${esc(e.exEn)}" aria-label="Ouvir o exemplo">${ICONE_OUVIR}</button>
+      <div class="cab">
+        <div class="cab-texto"><p class="ex-en">${esc(e.exEn)}</p><p class="ex-pt">${esc(e.exPt)}</p></div>
+        <button class="btn-icone sem-borda" type="button" data-ouvir="${esc(e.exEn)}" aria-label="Ouvir o exemplo">${ICONE_OUVIR}</button>
+      </div>
     </div>
-    ${e.alt && e.alt.length ? `<div class="bloco"><span class="sub">Também se diz</span><div class="chips">${e.alt.map((a) => `<span class="chip selecionavel">${esc(a)}</span>`).join("")}</div></div>` : ""}
+    ${e.alt && e.alt.length ? `<p class="nota"><span class="sub" style="text-transform:none;letter-spacing:0">Também se diz:</span> ${e.alt.map(esc).join(" · ")}</p>` : ""}
   </article>`;
 }
 
@@ -459,7 +476,7 @@ async function traduzir(textoBruto) {
     // Tenta também com as gírias de internet ajustadas ("eai" → "e aí", "belezinha" → "beleza").
     const ajustada = buscarExpressoes(ajustarPortugues(texto), "pt", dentro);
     exata = exata || ajustada.exata;
-    dentro = [...dentro, ...ajustada.dentro.filter((e) => e !== exata)].slice(0, 4);
+    dentro = [...dentro, ...ajustada.dentro.filter((e) => e !== exata)].slice(0, 3);
   }
   const res = $("#resultado");
   const frasesP = buscarFrases(ptEn ? ajustarPortugues(texto, true) : texto, ptEn ? "pt" : "en");

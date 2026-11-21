@@ -127,3 +127,9 @@ main { flex: 1; padding: 8px 20px 110px; }
 .frase-en { font-size: 16px; font-weight: 500; line-height: 1.4; overflow-wrap: anywhere; }
 .frase-pt { font-size: 14px; line-height: 1.4; color: var(--muted); overflow-wrap: anywhere; }
 .credito { font-size: 12px; color: var(--muted); }
+
+/* Cartões secundários mais enxutos */
+.cartao.compacto { gap: 8px; padding: 14px 16px; }
+.en-menor { font-size: 18px; }
+.pt-menor { font-size: 16px; font-weight: 500; color: var(--text2); line-height: 1.35; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
+.exemplo .cab { align-items: center; }
